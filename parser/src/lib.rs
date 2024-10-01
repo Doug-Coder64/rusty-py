@@ -71,26 +71,43 @@ fn parse_operator(level: PrecedenceLevel, input: &str) -> IResult<&str, BinaryOp
             map(preceded(multispace0, tag("+")), |_| BinaryOperator::Add),
             map(preceded(multispace0, tag("-")), |_| BinaryOperator::Subtract)
         ))(input),
+        PrecedenceLevel::Power => alt((
+            map(preceded(multispace0, tag("**")), |_| BinaryOperator::Power),
+        ))(input),
         PrecedenceLevel::MulDiv => alt((
             map(preceded(multispace0, tag("*")), |_| BinaryOperator::Multiply),
             map(preceded(multispace0, tag("//")), |_| BinaryOperator::FloorDivide), // Handle floor division
             map(preceded(multispace0, tag("/")), |_| BinaryOperator::Divide),
             map(preceded(multispace0, tag("%")), |_| BinaryOperator::Modulus),
         ))(input),
-        PrecedenceLevel::Power => alt((
-            map(preceded(multispace0, tag("**")), |_| BinaryOperator::Power),
-        ))(input)
     }    
+}
+
+fn parse_power(input: &str) -> IResult<&str, Expression> {
+    let (input, init) = alt((parse_number, parse_identifier, parse_parenthesize))(input)?;
+
+    let (input, result) = many0(
+        pair(
+            |i| parse_operator(PrecedenceLevel::Power, i),
+    alt((parse_number, parse_identifier, parse_parenthesize))
+        )
+    )(input)?;
+
+    let expr = result.into_iter().fold(init, |acc, (op, right)| {
+        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
+    }); 
+
+    Ok((input, expr))
 }
 
 // parse for factors
 fn parse_factor(input: &str) -> IResult<&str, Expression> {
     
-    let (input, init) = alt((parse_number, parse_identifier, parse_parenthesize))(input)?;
+    let (input, init) = parse_power(input)?;
     let (input, result) = many0(
             pair(
                 |i| parse_operator(PrecedenceLevel::MulDiv, i),
-        alt((parse_number, parse_identifier, parse_parenthesize))
+        parse_power
             )
         )(input)?;
 
