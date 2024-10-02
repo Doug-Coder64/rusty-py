@@ -6,10 +6,10 @@ pub enum Token {
     Identifier(String),
     Operator(String),
     String(String),
+    Boolean(bool),
     OpenParen,
     CloseParen,
     Assign,
-    Equal,
     EOF, //End of Input
 }
 
@@ -22,6 +22,27 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             // Skip Whitespace
             ' ' | '\t' | '\n' => {
                 chars.next();
+            }
+
+            //Handle boolean literals
+            'T' | 'F' => {
+                let mut literal = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_alphanumeric() {
+                        literal.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if literal == "True" {
+                    tokens.push(Token::Boolean(true));
+                } else if literal == "False" {
+                    tokens.push(Token::Boolean(false));
+                } else {
+                    tokens.push(Token::Identifier(literal));
+                }
             }
 
             //Handle String
@@ -114,17 +135,61 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
 
 
-            // Handle Assign
+            // Handle Assign and comparison
             '=' => {
                 chars.next();
                 if let Some(&'=') = chars.peek() {
                     chars.next();
-                    tokens.push(Token::Equal);
+                    tokens.push(Token::Operator("==".to_string()));
                 } else {
                     tokens.push(Token::Assign);
                 }
             }
 
+            '!' => {
+                chars.next();
+                if let Some('=') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("!=".to_string()));
+                }
+            }
+
+            '<' => {
+                chars.next();
+                if let Some('=') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("<=".to_string()))
+                } else {
+                    tokens.push(Token::Operator("<".to_string()))
+                }
+            }
+
+            '>' => {
+                chars.next();
+                if let Some('=') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator(">=".to_string()));
+                } else {
+                    tokens.push(Token::Operator(">".to_string()));
+                }
+            }
+
+            '&' => {
+                chars.next();
+                if let Some('&') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("&&".to_string()));
+                }
+            }
+
+            '|' => {
+                chars.next();
+                if let Some('|') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("||".to_string()));
+                }
+            }
+            
             //Handle Parentheses
             '(' => {
                 tokens.push(Token::OpenParen);

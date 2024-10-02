@@ -5,7 +5,10 @@ pub enum Expression {
     Number(i64),
     String(String),
     Variable(String),
+    Boolean(bool),
     BinaryOp(Box<Expression>, BinaryOperator, Box<Expression>),
+    CompareOp(Box<Expression>, CompareOperator, Box<Expression>),
+
 }
 
 #[derive(Debug, PartialEq)]
@@ -18,6 +21,19 @@ pub enum BinaryOperator {
     Modulus,
     Power,
 }
+
+#[derive(Debug, PartialEq)]
+pub enum CompareOperator {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+    And,
+    Or,
+}
+
 
 #[derive(Debug)]
 pub enum PrecedenceLevel {
@@ -119,6 +135,10 @@ fn parse_primary(tokens: &[Token], position: &mut usize) -> Result<Expression, P
             advance(position);
             Ok(Expression::String(value.clone()))
         }
+        Token::Boolean(value) => {
+            advance(position);
+            Ok(Expression::Boolean(*value))
+        }
         Token::OpenParen => {
             advance(position);
             let expr = parse_expression(tokens, position)?;
@@ -137,9 +157,12 @@ fn parse_primary(tokens: &[Token], position: &mut usize) -> Result<Expression, P
 
 
 fn parse_expression(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    parse_boolean(tokens, position)
+}
 
-    let mut expr = parse_factor(tokens, position)?;
-    
+fn parse_add_sub(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_comparison(tokens, position)?;
+
     while let Token::Operator(op) = current_token(tokens, *position) {
         let operator = match op.as_str() {
             "+" => BinaryOperator::Add,
@@ -168,6 +191,48 @@ fn parse_assignment(tokens: &[Token], position: &mut usize) -> Result<Stmt, Pars
     } 
     
     Err(ParseError::InvalidIdentifier)  
+}
+
+pub fn parse_comparison(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_factor(tokens, position)?;
+
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "==" => CompareOperator::Equal,
+            "!=" => CompareOperator::NotEqual,
+            "<" => CompareOperator::LessThan,
+            "<=" => CompareOperator::LessEqual,
+            ">" => CompareOperator::GreaterThan,
+            ">=" => CompareOperator::GreaterEqual, 
+            _ => break
+        };
+
+        advance(position);
+
+        let right = parse_factor(tokens, position)?;
+        expr = Expression::CompareOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Ok(expr)
+}
+
+pub fn parse_boolean(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_add_sub(tokens, position)?;
+
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "&&" => CompareOperator::And,
+            "||" => CompareOperator::Or,
+            _ => break,
+        };
+
+        advance(position);
+
+        let right = parse_add_sub(tokens, position)?;
+        expr = Expression::CompareOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Ok(expr)
 }
 
 pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
