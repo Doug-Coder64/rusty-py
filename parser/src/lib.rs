@@ -8,6 +8,7 @@ use nom::{
     IResult,
 };
 
+use tokenizer::*;
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
@@ -45,7 +46,15 @@ pub struct Program {
     pub statements: Vec<Stmt>,
 }
 
-fn parse_number(input: &str) -> IResult<&str, Expression> {
+fn current_token(tokens: &[Token], position: usize) -> &Token {
+    tokens.get(position).unwrap_or(&Token::EOF)
+}
+
+fn advance(position: &mut usize) {
+    *position += 1;
+}
+
+fn parse_number(tokens: &[Token], position: &mut usize) -> Option<Expression> {
 
     //checks to see if the number is negative 
     let (input, sign) =  opt(preceded(multispace0, tag("-")))(input)?;
