@@ -66,13 +66,13 @@ fn parse_identifier(tokens: &[Token], position: &mut usize) -> Result<Expression
 
 fn parse_power(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
 
-    let mut expr = parse_parenthesize(tokens, position)?;
+    let mut expr = parse_primary(tokens, position)?;
 
 
     while let Token::Operator(op) = current_token(tokens, *position) {
         if op == "**" {
             advance(position);
-            let right =  parse_parenthesize(tokens, position)?;
+            let right =  parse_primary(tokens, position)?;
             expr = Expression::BinaryOp(Box::new(expr), BinaryOperator::Power, Box::new(right));
         } else {
             break;
@@ -105,7 +105,7 @@ fn parse_factor(tokens: &[Token], position: &mut usize) -> Result<Expression, Pa
 
 
 //handles expressions wrapped in parentheses 
-fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+fn parse_primary(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
     match current_token(tokens, *position) {
         Token::Number(n) => {
             advance(position);
@@ -115,6 +115,10 @@ fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Result<Expressi
             advance(position);
             Ok(Expression::Variable(name.clone()))
         },
+        Token::String(value) => {
+            advance(position);
+            Ok(Expression::String(value.clone()))
+        }
         Token::OpenParen => {
             advance(position);
             let expr = parse_expression(tokens, position)?;

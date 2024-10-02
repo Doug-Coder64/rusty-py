@@ -264,3 +264,20 @@ fn multi_line() {
 
     program_eq(input, expected);
 }
+
+#[test]
+fn parse_string() {
+    let input = r#"x = "Hello""#;
+
+    let expected = Program {
+        statements: vec![
+            Stmt::Assignment(
+                "x".to_string(),
+                Expression::String("Hello".to_string()),
+                   
+            )
+        ]
+    };
+
+    program_eq(input, expected);
+}

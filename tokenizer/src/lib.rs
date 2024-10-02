@@ -1,8 +1,11 @@
+use std::string;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Number(i64),
     Identifier(String),
     Operator(String),
+    String(String),
     OpenParen,
     CloseParen,
     Assign,
@@ -19,6 +22,24 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             // Skip Whitespace
             ' ' | '\t' | '\n' => {
                 chars.next();
+            }
+
+            //Handle String
+            '"' => {
+                chars.next();
+                let mut string_value = String::new();
+
+                while let Some(&char) = chars.peek()  {
+                    if char == '"' {
+                        chars.next();
+                        break;
+                    } else {
+                        string_value.push(char);
+                        chars.next();
+                    }
+                }
+
+                tokens.push(Token::String(string_value));
             }
 
             // Handle numbers and subtraction
