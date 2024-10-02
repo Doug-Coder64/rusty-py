@@ -3,9 +3,13 @@ use tokenizer::tokenize;
 fn program_eq(input: &str, expected: Program) {
     let tokens = tokenize(input);
 
-    let program = parse_program(&tokens);
+    match parse_program(&tokens) {
+        Ok(program) => {
+            assert_eq!(program, expected)
+        }
 
-    assert_eq!(program, expected);
+        Err(e) => panic!("failed to parse  program:  {:?}", e)
+    }
 }
 
 

@@ -31,6 +31,15 @@ pub enum Stmt {
     Assignment(String, Expression)
 }
 
+#[derive(Debug)]
+pub enum ParseError {
+    UnexpectedToken(String),
+    MismatchParenthesis,
+    UnexpectedEOF,
+    InvalidAssignment,
+    InvalidIdentifier,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
@@ -44,28 +53,18 @@ fn advance(position: &mut usize) {
     *position += 1;
 }
 
-fn parse_number(tokens: &[Token], position: &mut usize) -> Option<Expression> {
-
-    if let Token::Number(n) = current_token(tokens, *position) {
-        advance(position);
-        Some(Expression::Number(*n))
-    } else {
-        None
-    }
-}
-
 // Parse Variables (identifiers)
-fn parse_identifier(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+fn parse_identifier(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
 
     if let Token::Identifier(name) = current_token(tokens, *position) {
         advance(position);
-        Some(Expression::Variable(name.clone()))
+        Ok(Expression::Variable(name.clone()))
     } else {
-        None
+        Err(ParseError::InvalidIdentifier)
     }
 }
 
-fn parse_power(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+fn parse_power(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
 
     let mut expr = parse_parenthesize(tokens, position)?;
 
@@ -80,12 +79,12 @@ fn parse_power(tokens: &[Token], position: &mut usize) -> Option<Expression> {
         }
     }
 
-    Some(expr)
+    Ok(expr)
    
 }
 
 // parse for factors
-fn parse_factor(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+fn parse_factor(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
     let mut expr = parse_power(tokens, position)?;
 
     while let Token::Operator(op) = current_token(tokens, *position) {
@@ -101,20 +100,20 @@ fn parse_factor(tokens: &[Token], position: &mut usize) -> Option<Expression> {
         expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
     }
 
-    Some(expr)
+    Ok(expr)
 }
 
 
 //handles expressions wrapped in parentheses 
-fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
     match current_token(tokens, *position) {
         Token::Number(n) => {
             advance(position);
-            Some(Expression::Number(*n))
+            Ok(Expression::Number(*n))
         }, 
         Token::Identifier(name) => {
             advance(position);
-            Some(Expression::Variable(name.clone()))
+            Ok(Expression::Variable(name.clone()))
         },
         Token::OpenParen => {
             advance(position);
@@ -122,18 +121,18 @@ fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Option<Expressi
 
             if let Token::CloseParen = current_token(tokens, *position) {
                 advance(position);
-                Some(expr)
+                Ok(expr)
             } else {
-                None
+                Err(ParseError::MismatchParenthesis)
             }
         }, 
 
-        _ => None,
+        _ => Err(ParseError::UnexpectedToken(format!("{:?}", current_token(tokens, *position)))),
     }
 }
 
 
-fn parse_expression(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+fn parse_expression(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
 
     let mut expr = parse_factor(tokens, position)?;
     
@@ -148,31 +147,41 @@ fn parse_expression(tokens: &[Token], position: &mut usize) -> Option<Expression
         expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
     }
 
-    Some(expr)
+    Ok(expr)
 }
 
-fn parse_assignment(tokens: &[Token], position: &mut usize) -> Option<Stmt> {
+fn parse_assignment(tokens: &[Token], position: &mut usize) -> Result<Stmt, ParseError> {
     
-    if let Some(Expression::Variable(var)) = parse_identifier(tokens, position){
+    if let Expression::Variable(var) = parse_identifier(tokens, position)? {
         if let Token::Assign = current_token(tokens, *position) {
             advance(position);
-            if let Some(expr) = parse_expression(tokens, position) {
-                return Some(Stmt::Assignment(var, expr));
-            }
+            let expr = parse_expression(tokens, position)?;
+            return Ok(Stmt::Assignment(var, expr));
+            
+        } else {
+            return Err(ParseError::InvalidAssignment);
         }
     } 
     
-    None  
+    Err(ParseError::InvalidIdentifier)  
 }
 
-pub fn parse_program(tokens: &[Token]) -> Program {
+pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
 
     let mut position = 0; 
     let mut statements = Vec::new();
 
-    while let Some(stmt) = parse_assignment(tokens, &mut position) {
-        statements.push(stmt);
+    while position < tokens.len() {
+        if let Token::EOF = current_token(tokens, position) {
+            break;
+        }
+
+        match parse_assignment(tokens, &mut position) {
+            Ok(stmt) => statements.push(stmt),
+            Err(e) => return Err(e),
+        }
     }
 
-    Program { statements }
+    Ok(Program { statements })
+    
 }
