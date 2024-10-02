@@ -1,20 +1,14 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alpha1, digit1, multispace0},
-    combinator::{map, opt},
-    multi::many0,
-    sequence::{delimited, pair, terminated, preceded},
-    IResult,
-};
-
+use tokenizer::*;
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
     Number(i64),
     String(String),
     Variable(String),
+    Boolean(bool),
     BinaryOp(Box<Expression>, BinaryOperator, Box<Expression>),
+    CompareOp(Box<Expression>, CompareOperator, Box<Expression>),
+
 }
 
 #[derive(Debug, PartialEq)]
@@ -28,6 +22,19 @@ pub enum BinaryOperator {
     Power,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum CompareOperator {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+    And,
+    Or,
+}
+
+
 #[derive(Debug)]
 pub enum PrecedenceLevel {
     AddSub,
@@ -40,124 +47,210 @@ pub enum Stmt {
     Assignment(String, Expression)
 }
 
+#[derive(Debug)]
+pub enum ParseError {
+    UnexpectedToken(String),
+    MismatchParenthesis,
+    UnexpectedEOF,
+    InvalidAssignment,
+    InvalidIdentifier,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
 }
 
-fn parse_number(input: &str) -> IResult<&str, Expression> {
+fn current_token(tokens: &[Token], position: usize) -> &Token {
+    tokens.get(position).unwrap_or(&Token::EOF)
+}
 
-    //checks to see if the number is negative 
-    let (input, sign) =  opt(preceded(multispace0, tag("-")))(input)?;
-    let (input, num) = preceded(multispace0, digit1)(input)?;
-
-    let value: i64 = num.parse().unwrap();
-    let value = if sign.is_some() { -value } else { value };
-
-    Ok((input, Expression::Number(value)))
+fn advance(position: &mut usize) {
+    *position += 1;
 }
 
 // Parse Variables (identifiers)
-fn parse_identifier(input: &str) -> IResult<&str, Expression> {
-    map(
-        preceded(multispace0, alpha1),
-         |var: &str| Expression::Variable(var.to_string()))(input)
+fn parse_identifier(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+
+    if let Token::Identifier(name) = current_token(tokens, *position) {
+        advance(position);
+        Ok(Expression::Variable(name.clone()))
+    } else {
+        Err(ParseError::InvalidIdentifier)
+    }
 }
 
-fn parse_operator(level: PrecedenceLevel, input: &str) -> IResult<&str, BinaryOperator> {
+fn parse_power(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
 
-    match level {
-        PrecedenceLevel::AddSub => alt((
-            map(preceded(multispace0, tag("+")), |_| BinaryOperator::Add),
-            map(preceded(multispace0, tag("-")), |_| BinaryOperator::Subtract)
-        ))(input),
-        PrecedenceLevel::Power => alt((
-            map(preceded(multispace0, tag("**")), |_| BinaryOperator::Power),
-        ))(input),
-        PrecedenceLevel::MulDiv => alt((
-            map(preceded(multispace0, tag("*")), |_| BinaryOperator::Multiply),
-            map(preceded(multispace0, tag("//")), |_| BinaryOperator::FloorDivide), // Handle floor division
-            map(preceded(multispace0, tag("/")), |_| BinaryOperator::Divide),
-            map(preceded(multispace0, tag("%")), |_| BinaryOperator::Modulus),
-        ))(input),
-    }    
-}
+    let mut expr = parse_primary(tokens, position)?;
 
-fn parse_power(input: &str) -> IResult<&str, Expression> {
-    let (input, init) = alt((parse_number, parse_identifier, parse_parenthesize))(input)?;
 
-    let (input, result) = many0(
-        pair(
-            |i| parse_operator(PrecedenceLevel::Power, i),
-    alt((parse_number, parse_identifier, parse_parenthesize))
-        )
-    )(input)?;
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        if op == "**" {
+            advance(position);
+            let right =  parse_primary(tokens, position)?;
+            expr = Expression::BinaryOp(Box::new(expr), BinaryOperator::Power, Box::new(right));
+        } else {
+            break;
+        }
+    }
 
-    let expr = result.into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    }); 
-
-    Ok((input, expr))
+    Ok(expr)
+   
 }
 
 // parse for factors
-fn parse_factor(input: &str) -> IResult<&str, Expression> {
-    
-    let (input, init) = parse_power(input)?;
-    let (input, result) = many0(
-            pair(
-                |i| parse_operator(PrecedenceLevel::MulDiv, i),
-        parse_power
-            )
-        )(input)?;
+fn parse_factor(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_power(tokens, position)?;
 
-    let expr = result.into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    });
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "*" => BinaryOperator::Multiply, 
+            "/" => BinaryOperator::Divide,
+            "//" => BinaryOperator::FloorDivide,
+            "%" => BinaryOperator::Modulus,
+            _ => break,
+        };
+        advance(position);
+        let right = parse_power(tokens, position)?;
+        expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
+    }
 
-    Ok((input, expr))
+    Ok(expr)
 }
 
 
 //handles expressions wrapped in parentheses 
-fn parse_parenthesize(input: &str) -> IResult<&str, Expression> {
-    delimited(
-        preceded(multispace0, tag("(")),
-        parse_expression,
-        preceded(multispace0, tag(")"))
-    )(input)
+fn parse_primary(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    match current_token(tokens, *position) {
+        Token::Number(n) => {
+            advance(position);
+            Ok(Expression::Number(*n))
+        }, 
+        Token::Identifier(name) => {
+            advance(position);
+            Ok(Expression::Variable(name.clone()))
+        },
+        Token::String(value) => {
+            advance(position);
+            Ok(Expression::String(value.clone()))
+        }
+        Token::Boolean(value) => {
+            advance(position);
+            Ok(Expression::Boolean(*value))
+        }
+        Token::OpenParen => {
+            advance(position);
+            let expr = parse_expression(tokens, position)?;
+
+            if let Token::CloseParen = current_token(tokens, *position) {
+                advance(position);
+                Ok(expr)
+            } else {
+                Err(ParseError::MismatchParenthesis)
+            }
+        }, 
+
+        _ => Err(ParseError::UnexpectedToken(format!("{:?}", current_token(tokens, *position)))),
+    }
 }
 
 
-fn parse_expression(input: &str) -> IResult<&str, Expression> {
-
-    let (input, init) = parse_factor(input)?;
-    let (input, result) = many0(
-            pair(
-            |i| parse_operator(PrecedenceLevel::AddSub, i),
-            parse_factor
-            )
-        )(input)?;
-
-    let expr = result. into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    });
-
-    Ok((input, expr))
+fn parse_expression(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    parse_boolean(tokens, position)
 }
 
-fn parse_assignment(input: &str) -> IResult<&str, Stmt> {
+fn parse_add_sub(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_comparison(tokens, position)?;
+
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "+" => BinaryOperator::Add,
+            "-" => BinaryOperator::Subtract,
+            _ => break,
+        };
+        advance(position);
+        let right =  parse_factor(tokens, position)?;
+        expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Ok(expr)
+}
+
+fn parse_assignment(tokens: &[Token], position: &mut usize) -> Result<Stmt, ParseError> {
     
-    let (input, var) = terminated(alpha1, multispace0)(input)?;
-    let (input, _) = preceded(multispace0,tag("="))(input)?;
-    let (input, expr) = parse_expression(input)?;
+    if let Expression::Variable(var) = parse_identifier(tokens, position)? {
+        if let Token::Assign = current_token(tokens, *position) {
+            advance(position);
+            let expr = parse_expression(tokens, position)?;
+            return Ok(Stmt::Assignment(var, expr));
+            
+        } else {
+            return Err(ParseError::InvalidAssignment);
+        }
+    } 
     
-    Ok((input, Stmt::Assignment(var.to_string(), expr)))
+    Err(ParseError::InvalidIdentifier)  
 }
 
-pub fn parse_program(input: &str) -> IResult<&str, Program> {
+pub fn parse_comparison(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_factor(tokens, position)?;
 
-    let (input, statements) = many0(terminated(parse_assignment, multispace0))(input)?;    
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "==" => CompareOperator::Equal,
+            "!=" => CompareOperator::NotEqual,
+            "<" => CompareOperator::LessThan,
+            "<=" => CompareOperator::LessEqual,
+            ">" => CompareOperator::GreaterThan,
+            ">=" => CompareOperator::GreaterEqual, 
+            _ => break
+        };
 
-    Ok((input, Program { statements }))
+        advance(position);
+
+        let right = parse_factor(tokens, position)?;
+        expr = Expression::CompareOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Ok(expr)
+}
+
+pub fn parse_boolean(tokens: &[Token], position: &mut usize) -> Result<Expression, ParseError> {
+    let mut expr = parse_add_sub(tokens, position)?;
+
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "&&" => CompareOperator::And,
+            "||" => CompareOperator::Or,
+            _ => break,
+        };
+
+        advance(position);
+
+        let right = parse_add_sub(tokens, position)?;
+        expr = Expression::CompareOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Ok(expr)
+}
+
+pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
+
+    let mut position = 0; 
+    let mut statements = Vec::new();
+
+    while position < tokens.len() {
+        if let Token::EOF = current_token(tokens, position) {
+            break;
+        }
+
+        match parse_assignment(tokens, &mut position) {
+            Ok(stmt) => statements.push(stmt),
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(Program { statements })
+    
 }

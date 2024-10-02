@@ -1,12 +1,14 @@
 use parser::*;
-
+use tokenizer::tokenize;
 fn program_eq(input: &str, expected: Program) {
-    match parse_program(input) {
-        Ok((_, program)) => {
-            assert_eq!(program, expected);
+    let tokens = tokenize(input);
+
+    match parse_program(&tokens) {
+        Ok(program) => {
+            assert_eq!(program, expected)
         }
 
-        Err(e) => panic!("Failed to parse program: {:?}", e),
+        Err(e) => panic!("failed to parse  program:  {:?}", e)
     }
 }
 
@@ -262,3 +264,21 @@ fn multi_line() {
 
     program_eq(input, expected);
 }
+
+#[test]
+fn parse_string() {
+    let input = r#"x = "Hello""#;
+
+    let expected = Program {
+        statements: vec![
+            Stmt::Assignment(
+                "x".to_string(),
+                Expression::String("Hello".to_string()),
+                   
+            )
+        ]
+    };
+
+    program_eq(input, expected);
+}
+
