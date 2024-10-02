@@ -1,13 +1,3 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alpha1, digit1, multispace0},
-    combinator::{map, opt},
-    multi::many0,
-    sequence::{delimited, pair, terminated, preceded},
-    IResult,
-};
-
 use tokenizer::*;
 
 #[derive(Debug, PartialEq)]
@@ -56,117 +46,133 @@ fn advance(position: &mut usize) {
 
 fn parse_number(tokens: &[Token], position: &mut usize) -> Option<Expression> {
 
-    //checks to see if the number is negative 
-    let (input, sign) =  opt(preceded(multispace0, tag("-")))(input)?;
-    let (input, num) = preceded(multispace0, digit1)(input)?;
-
-    let value: i64 = num.parse().unwrap();
-    let value = if sign.is_some() { -value } else { value };
-
-    Ok((input, Expression::Number(value)))
+    if let Token::Number(n) = current_token(tokens, *position) {
+        advance(position);
+        Some(Expression::Number(*n))
+    } else {
+        None
+    }
 }
 
 // Parse Variables (identifiers)
-fn parse_identifier(input: &str) -> IResult<&str, Expression> {
-    map(
-        preceded(multispace0, alpha1),
-         |var: &str| Expression::Variable(var.to_string()))(input)
+fn parse_identifier(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+
+    if let Token::Identifier(name) = current_token(tokens, *position) {
+        advance(position);
+        Some(Expression::Variable(name.clone()))
+    } else {
+        None
+    }
 }
 
-fn parse_operator(level: PrecedenceLevel, input: &str) -> IResult<&str, BinaryOperator> {
+fn parse_power(tokens: &[Token], position: &mut usize) -> Option<Expression> {
 
-    match level {
-        PrecedenceLevel::AddSub => alt((
-            map(preceded(multispace0, tag("+")), |_| BinaryOperator::Add),
-            map(preceded(multispace0, tag("-")), |_| BinaryOperator::Subtract)
-        ))(input),
-        PrecedenceLevel::Power => alt((
-            map(preceded(multispace0, tag("**")), |_| BinaryOperator::Power),
-        ))(input),
-        PrecedenceLevel::MulDiv => alt((
-            map(preceded(multispace0, tag("*")), |_| BinaryOperator::Multiply),
-            map(preceded(multispace0, tag("//")), |_| BinaryOperator::FloorDivide), // Handle floor division
-            map(preceded(multispace0, tag("/")), |_| BinaryOperator::Divide),
-            map(preceded(multispace0, tag("%")), |_| BinaryOperator::Modulus),
-        ))(input),
-    }    
-}
+    let mut expr = parse_parenthesize(tokens, position)?;
 
-fn parse_power(input: &str) -> IResult<&str, Expression> {
-    let (input, init) = alt((parse_number, parse_identifier, parse_parenthesize))(input)?;
 
-    let (input, result) = many0(
-        pair(
-            |i| parse_operator(PrecedenceLevel::Power, i),
-    alt((parse_number, parse_identifier, parse_parenthesize))
-        )
-    )(input)?;
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        if op == "**" {
+            advance(position);
+            let right =  parse_parenthesize(tokens, position)?;
+            expr = Expression::BinaryOp(Box::new(expr), BinaryOperator::Power, Box::new(right));
+        } else {
+            break;
+        }
+    }
 
-    let expr = result.into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    }); 
-
-    Ok((input, expr))
+    Some(expr)
+   
 }
 
 // parse for factors
-fn parse_factor(input: &str) -> IResult<&str, Expression> {
-    
-    let (input, init) = parse_power(input)?;
-    let (input, result) = many0(
-            pair(
-                |i| parse_operator(PrecedenceLevel::MulDiv, i),
-        parse_power
-            )
-        )(input)?;
+fn parse_factor(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+    let mut expr = parse_power(tokens, position)?;
 
-    let expr = result.into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    });
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "*" => BinaryOperator::Multiply, 
+            "/" => BinaryOperator::Divide,
+            "//" => BinaryOperator::FloorDivide,
+            "%" => BinaryOperator::Modulus,
+            _ => break,
+        };
+        advance(position);
+        let right = parse_power(tokens, position)?;
+        expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
+    }
 
-    Ok((input, expr))
+    Some(expr)
 }
 
 
 //handles expressions wrapped in parentheses 
-fn parse_parenthesize(input: &str) -> IResult<&str, Expression> {
-    delimited(
-        preceded(multispace0, tag("(")),
-        parse_expression,
-        preceded(multispace0, tag(")"))
-    )(input)
+fn parse_parenthesize(tokens: &[Token], position: &mut usize) -> Option<Expression> {
+    match current_token(tokens, *position) {
+        Token::Number(n) => {
+            advance(position);
+            Some(Expression::Number(*n))
+        }, 
+        Token::Identifier(name) => {
+            advance(position);
+            Some(Expression::Variable(name.clone()))
+        },
+        Token::OpenParen => {
+            advance(position);
+            let expr = parse_expression(tokens, position)?;
+
+            if let Token::CloseParen = current_token(tokens, *position) {
+                advance(position);
+                Some(expr)
+            } else {
+                None
+            }
+        }, 
+
+        _ => None,
+    }
 }
 
 
-fn parse_expression(input: &str) -> IResult<&str, Expression> {
+fn parse_expression(tokens: &[Token], position: &mut usize) -> Option<Expression> {
 
-    let (input, init) = parse_factor(input)?;
-    let (input, result) = many0(
-            pair(
-            |i| parse_operator(PrecedenceLevel::AddSub, i),
-            parse_factor
-            )
-        )(input)?;
-
-    let expr = result. into_iter().fold(init, |acc, (op, right)| {
-        Expression::BinaryOp(Box::new(acc), op, Box::new(right))
-    });
-
-    Ok((input, expr))
-}
-
-fn parse_assignment(input: &str) -> IResult<&str, Stmt> {
+    let mut expr = parse_factor(tokens, position)?;
     
-    let (input, var) = terminated(alpha1, multispace0)(input)?;
-    let (input, _) = preceded(multispace0,tag("="))(input)?;
-    let (input, expr) = parse_expression(input)?;
-    
-    Ok((input, Stmt::Assignment(var.to_string(), expr)))
+    while let Token::Operator(op) = current_token(tokens, *position) {
+        let operator = match op.as_str() {
+            "+" => BinaryOperator::Add,
+            "-" => BinaryOperator::Subtract,
+            _ => break,
+        };
+        advance(position);
+        let right =  parse_factor(tokens, position)?;
+        expr = Expression::BinaryOp(Box::new(expr), operator, Box::new(right));
+    }
+
+    Some(expr)
 }
 
-pub fn parse_program(input: &str) -> IResult<&str, Program> {
+fn parse_assignment(tokens: &[Token], position: &mut usize) -> Option<Stmt> {
+    
+    if let Some(Expression::Variable(var)) = parse_identifier(tokens, position){
+        if let Token::Assign = current_token(tokens, *position) {
+            advance(position);
+            if let Some(expr) = parse_expression(tokens, position) {
+                return Some(Stmt::Assignment(var, expr));
+            }
+        }
+    } 
+    
+    None  
+}
 
-    let (input, statements) = many0(terminated(parse_assignment, multispace0))(input)?;    
+pub fn parse_program(tokens: &[Token]) -> Program {
 
-    Ok((input, Program { statements }))
+    let mut position = 0; 
+    let mut statements = Vec::new();
+
+    while let Some(stmt) = parse_assignment(tokens, &mut position) {
+        statements.push(stmt);
+    }
+
+    Program { statements }
 }

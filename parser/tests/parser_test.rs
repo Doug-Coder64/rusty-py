@@ -1,13 +1,11 @@
 use parser::*;
-
+use tokenizer::tokenize;
 fn program_eq(input: &str, expected: Program) {
-    match parse_program(input) {
-        Ok((_, program)) => {
-            assert_eq!(program, expected);
-        }
+    let tokens = tokenize(input);
 
-        Err(e) => panic!("Failed to parse program: {:?}", e),
-    }
+    let program = parse_program(&tokens);
+
+    assert_eq!(program, expected);
 }
 
 

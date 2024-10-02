@@ -21,9 +21,20 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 chars.next();
             }
 
-            // Handle numbers
-            '0'..='9' => {
+            // Handle numbers and subtraction
+            '0'..='9' | '-' => {
                 let mut number = String::new();
+
+                if ch == '-' {
+                    chars.next();
+                    if let Some('0'..='9') = chars.peek() {
+                        number.push('-');
+                    } else {
+                        tokens.push(Token::Operator("-".to_string()));
+                        continue;
+                    }
+                }
+
                 while let Some(&digit) = chars.peek() {
                     if digit.is_numeric() {
                         number.push(digit);
@@ -52,12 +63,35 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(Token::Identifier(identifier));
             }
 
-            // Handle Operators
-            '+' | '-' | '*' | '/' | '%' => {
+            // Handle additon and modulus
+            '+' | '%' => {
                 let operator =  ch.to_string();
                 tokens.push(Token::Operator(operator));
                 chars.next();
             }
+
+            //Multiplication and Power
+            '*' => {
+                chars.next();
+                if let Some(&'*') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("**".to_string()));
+                } else {
+                    tokens.push(Token::Operator("*".to_string()))
+                }
+            }
+
+            //Division and floor division
+            '/' => {
+                chars.next();
+                if let Some(&'/') = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::Operator("//".to_string()));
+                } else {
+                    tokens.push(Token::Operator("/".to_string()))
+                }
+            }
+
 
             // Handle Assign
             '=' => {
