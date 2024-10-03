@@ -8,7 +8,7 @@ pub enum Expression {
     Boolean(bool),
     BinaryOp(Box<Expression>, BinaryOperator, Box<Expression>),
     CompareOp(Box<Expression>, CompareOperator, Box<Expression>),
-
+    FunctionCall(String, Vec<Expression>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,7 +44,9 @@ pub enum PrecedenceLevel {
 
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
-    Assignment(String, Expression)
+    Assignment(String, Expression),
+    FunctionDef(String, Vec<String>, Vec<Stmt>),
+    Return(Expression),
 }
 
 #[derive(Debug)]
@@ -234,6 +236,42 @@ pub fn parse_boolean(tokens: &[Token], position: &mut usize) -> Result<Expressio
 
     Ok(expr)
 }
+
+fn parse_function_def(tokens: &[Token], position: &mut usize) -> Result<Stmt, ParseError> {
+    if let Token::Def = current_token(tokens, *position) {
+        advance(position);
+    } else {
+        return Err(ParseError::UnexpectedToken(format!("{:?}", current_token(tokens, *position))));
+    }
+
+    let function_name = if let Token::Identifier(name) = current_token(tokens, *position) {
+        name.clone()
+    } else {
+        return Err(ParseError::InvalidIdentifier);
+    };
+    advance(position);
+
+    if let Token::OpenParen = current_token(tokens, *postion) {
+        advance(position);
+    } else {
+        return Err(ParseError::UnexpectedToken("Expected '('".to_string()));
+    }
+
+    if let Token::CloseParen = current_token(tokens, *position) {
+        advance(position);
+    } else {
+        return Err(ParseError::UnexpectedToken("Expected ')'".to_string()));
+    }
+
+    let mut body = Vec::new();
+    while !matches!(current_token(tokens, *position), Token::EOF) {
+        body.push(parse_statement(tokens, position)?);
+    }
+
+    Ok(Stmt::FunctionDef(func_name, params, body))
+}
+
+
 
 pub fn parse_program(tokens: &[Token]) -> Result<Program, ParseError> {
 

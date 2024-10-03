@@ -1,5 +1,3 @@
-use std::string;
-
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Number(i64),
@@ -7,8 +5,11 @@ pub enum Token {
     Operator(String),
     String(String),
     Boolean(bool),
+    Def,
+    Return,
     OpenParen,
     CloseParen,
+    Comma,
     Assign,
     EOF, //End of Input
 }
@@ -22,6 +23,44 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             // Skip Whitespace
             ' ' | '\t' | '\n' => {
                 chars.next();
+            }
+
+            //handles def
+            'd' => {
+                let mut def = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_alphanumeric() {
+                        def.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if def == "def" {
+                    tokens.push(Token::Def);
+                } else {
+                    tokens.push(Token::Identifier(def));
+                }
+            }
+
+            //handles return
+            'r' => {
+                let mut return_string = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_alphanumeric() {
+                        return_string.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if return_string == "return" {
+                    tokens.push(Token::Def);
+                } else {
+                    tokens.push(Token::Identifier(return_string));
+                }
             }
 
             //Handle boolean literals
@@ -189,7 +228,13 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     tokens.push(Token::Operator("||".to_string()));
                 }
             }
-            
+
+            //Handle commas
+            ',' => {
+                tokens.push(Token::Comma);
+                chars.next();
+            }
+
             //Handle Parentheses
             '(' => {
                 tokens.push(Token::OpenParen);
